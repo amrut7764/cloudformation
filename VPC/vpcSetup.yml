@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Basic setup to initialize AWS infrastructure with VPC, EC2, RDS and S3 bucket for WorkPress
+
+Description: Basic setup to initialize AWS infrastructure with VPC with public and private subnet, internet gateway.
+
 Resources:
   myVPC:
     Type: AWS::EC2::VPC
@@ -91,3 +93,16 @@ Resources:
       DestinationCidrBlock: "0.0.0.0/0"
       GatewayId: !Ref myInternetGateway
       RouteTableId: !Ref myPublicRouteTable
+
+Outputs:
+  myVPCID:
+    Description: "VPC ID created by the stack"
+    Value: !Ref myVPC
+
+  myPubSub:
+    Description: "Subnet ID of public subnet"
+    Value: !Ref myPublicSubnet
+
+  myPriSub:
+    Description: "Subnet ID of private subnet"
+    Value: !Ref myPrivateSubnet
