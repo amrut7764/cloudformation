@@ -1,13 +1,11 @@
-AWSTemplateFormatVersion: "2010-09-09"
-
+AWSTemplateFormatVersion: 2010-09-09
 Resources:
   myEC2:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: "ami-0fc61db8544a617ed" # Amazon Linux 2 HVM in North Virginia
-      InstanceType: "t2.micro"
-
+      ImageId: ami-0fc61db8544a617ed
+      InstanceType: t2.micro
 Outputs:
   EC2InstanceID:
-    Description: "Instance ID of the EC2"
-    Value: !Ref myEC2
+    Description: Instance ID of the EC2
+    Value: myEC2

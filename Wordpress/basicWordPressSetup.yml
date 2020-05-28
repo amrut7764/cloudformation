@@ -13,11 +13,11 @@ Parameters:
 
   KeyPairName:
     Type: String
-    Default: cfnadmin
+    Default: ""
 
   RDSInstanceName:
     Type: String
-    Default: mytestrds
+    Default: ""
 
   DatabaseName:
     Type: String

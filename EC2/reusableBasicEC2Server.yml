@@ -1,17 +1,14 @@
-AWSTemplateFormatVersion: "2010-09-09"
-
+AWSTemplateFormatVersion: 2010-09-09
 Description: Make it reusable across all the regions and instance type flexibility
-
 Parameters:
   EnvSize:
     Type: String
-    Default: "Small"
+    Default: Small
     AllowedValues:
       - Small
       - Medium
       - Large
     Description: Enter environment size to create.
-
 Mappings:
   InstanceTypeMap:
     Small:
@@ -20,7 +17,6 @@ Mappings:
       EC2: t2.small
     Large:
       EC2: t2.medium
-
   RegionMap:
     us-east-1:
       AmazonLinux: ami-0080e4c5bc078760e
@@ -54,16 +50,21 @@ Mappings:
       AmazonLinux: ami-0ad42f4f66f6c1cc9
     cn-north-1:
       AmazonLinux: ami-8e6aa0e3
-
 Resources:
   myEC2:
     Type: AWS::EC2::Instance
     Properties:
       ImageId:
-        Fn::FindInMap: [RegionMap, !Ref "AWS::Region", AmazonLinux]
+        Fn::FindInMap:
+          - RegionMap
+          - AWS::Region
+          - AmazonLinux
       InstanceType:
-        Fn::FindInMap: [InstanceTypeMap, !Ref EnvSize, EC2]
+        Fn::FindInMap:
+          - InstanceTypeMap
+          - EnvSize
+          - EC2
 Outputs:
   EC2InstanceID:
-    Description: "Instance ID of the EC2"
-    Value: !Ref myEC2
+    Description: Instance ID of the EC2
+    Value: myEC2
