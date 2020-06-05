@@ -204,3 +204,46 @@ Resources:
     Properties:
       RouteTableId: !Ref myPrivateRouteTable
       SubnetId: !Ref mySubnetPrivateC
+
+Outputs:
+  VPC:
+    Description: Identifier of the VPC
+    Value: !Ref myvpc
+    Export:
+      Name: sharedVPC # TODO Export value needs to be unique within the region. Use programatic naming shceme.
+
+  PublicSubnetA:
+    Description: Public subnet in first AZ
+    Value: !Ref mySubnetPublicA
+    Export:
+      Name: sharedSubnetPublicA
+
+  PublicSubnetB:
+    Description: Public subnet in second AZ
+    Value: !Ref mySubnetPublicB
+    Export:
+      Name: sharedSubnetPublicB
+
+  PublicSubnetC:
+    Description: Public subnet in third AZ
+    Value: !Ref mySubnetPublicC
+    Export:
+      Name: sharedSubnetPublicC
+
+  PrivateSubnetA:
+    Description: Private subnet in first AZ
+    Value: !Ref mySubnetPrivateA
+    Export:
+      Name: sharedSubnetPrivateA
+
+  PrivateSubnetB:
+    Description: Private subnet in second AZ
+    Value: !Ref mySubnetPrivateB
+    Export:
+      Name: sharedSubnetPrivateB
+
+  PrivateSubnetC:
+    Description: Private subnet in third AZ
+    Value: !Ref mySubnetPrivateC
+    Export:
+      Name: sharedSubnetPrivateC
