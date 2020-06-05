@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Make it reusable across all the regions and instance type flexibility
+Parameters:
+  EnvSize:
+    Type: String
+    Default: Small
+    AllowedValues:
+      - Small
+      - Medium
+      - Large
+    Description: Enter environment size to create.
+Mappings:
+  InstanceTypeMap:
+    Small:
+      EC2: t2.micro
+    Medium:
+      EC2: t2.small
+    Large:
+      EC2: t2.medium
+  RegionMap:
+    us-east-1:
+      AmazonLinux: ami-0080e4c5bc078760e
+    us-east-2:
+      AmazonLinux: ami-0cd3dfa4e37921605
+    us-west-1:
+      AmazonLinux: ami-0ec6517f6edbf8044
+    us-west-2:
+      AmazonLinux: ami-01e24be29428c15b2
+    sa-east-1:
+      AmazonLinux: ami-05145e0b28ad8e0b2
+    ca-central-1:
+      AmazonLinux: ami-07423fb63ea0a0930
+    eu-west-1:
+      AmazonLinux: ami-08935252a36e25f85
+    eu-west-2:
+      AmazonLinux: ami-01419b804382064e4
+    eu-west-3:
+      AmazonLinux: ami-0dd7e7ed60da8fb83
+    eu-central-1:
+      AmazonLinux: ami-0cfbf4f6db41068ac
+    ap-southeast-1:
+      AmazonLinux: ami-05b3bcf7f311194b3
+    ap-southeast-2:
+      AmazonLinux: ami-02fd0b06f06d93dfc
+    ap-northeast-1:
+      AmazonLinux: ami-00a5245b4816c38e6
+    ap-northeast-2:
+      AmazonLinux: ami-00dc207f8ba6dc919
+    ap-south-1:
+      AmazonLinux: ami-0ad42f4f66f6c1cc9
+    cn-north-1:
+      AmazonLinux: ami-8e6aa0e3
+Resources:
+  myEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+          - RegionMap
+          - AWS::Region
+          - AmazonLinux
+      InstanceType:
+        Fn::FindInMap:
+          - InstanceTypeMap
+          - EnvSize
+          - EC2
+Outputs:
+  EC2InstanceID:
+    Description: Instance ID of the EC2
+    Value: myEC2
