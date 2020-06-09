@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create an autoscaling group with launch template
+
+Parameters:
+  AmiId:
+    Type: String
+    Description: AMI ID for EC2 instance with launch template
+    Default: "ami-09d95fab7fff3776c"
+
+  EnvironmentSize:
+    Type: String
+    Default: Small
+    AllowedValues:
+      - Small
+      - Medium
+      - Large
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Mappings:
+  InstanceSize:
+    Small:
+      EC2: t2.micro
+      DB: db.t2.micro
+    Medium:
+      EC2: t2.medium
+      DB: db.t2.medium
+    Large:
+      EC2: t2.large
+      DB: db.t2.large
+
+Resources:
+  myLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          WordPress:
+            - "install_cfn"
+            - "install_web"
+        install_cfn:
+          files:
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.myLaunchTemplate.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --configsets "WordPress" --resource myLaunchTemplate --region ${AWS::Region}
+              mode: "000400"
+              owner: "root"
+              group: "root"
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              group: "root"
+              owner: "root"
+          services:
+            sysvinit:
+              cfn-hup:
+                ensureRunning: "true"
+                enabled: "true"
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_web:
+          packages:
+            yum:
+              httpd: []
+          files:
+            /var/www/html/index.html:
+              content: Hello World!
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !FindInMap [InstanceSize, !Ref EnvironmentSize, EC2]
+        KeyName: !Ref KeyName
+        SecurityGroupIds: [!Ref mySecurityGroup]
+        UserData:
+          "Fn::Base64": !Sub |
+            #!/bin/bash -xe
+            # yum update aws-cfn-bootstrap -y
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --configsets "WordPress" --resource myLaunchTemplate --region ${AWS::Region}
+            # yum update -y
+      LaunchTemplateName: web-infrastructure-ec2-template
+
+  mySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Web Application HTTP access from all world
+      GroupName: Web-SecGroup
+      SecurityGroupIngress:
+        - CidrIp: 72.137.105.90/32
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - SourceSecurityGroupId: !Ref myALBSecurityGroup
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+      VpcId: !ImportValue sharedVPC
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - SecurityGroup
+              - Web-Access
+
+  myALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for Application Load Balancer
+      GroupName: ALB-SecGroup
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+      VpcId: !ImportValue sharedVPC
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref "AWS::StackName"
+              - ALBSecurityGroup
+              - LBToBackend
+
+  myAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MaxSize: 1
+      MinSize: 1
+      DesiredCapacity: 1
+      AutoScalingGroupName: EC2-autoscalingGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 60
+      AvailabilityZones:
+        - !Select
+          - 0
+          - !GetAZs
+        - !Select
+          - 1
+          - !GetAZs
+      VPCZoneIdentifier:
+        #- !ImportValue sharedSubnetPrivateA  # FIXME: If NatGateway is not implemented, HTTP package will not get installed.
+        #- !ImportValue sharedSubnetPrivateB
+        - !ImportValue sharedSubnetPublicA
+        - !ImportValue sharedSubnetPublicB
+      TargetGroupARNs:
+        - !Ref myDefaultTargetGrp
+      LaunchTemplate:
+        LaunchTemplateId: !Ref myLaunchTemplate
+        Version: !GetAtt myLaunchTemplate.LatestVersionNumber
+
+  myAutoscalingPolicyUp:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref myAutoScalingGroup
+      Cooldown: 180
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+
+  myAutoscalingPolicyDown:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref myAutoScalingGroup
+      Cooldown: 180
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1
+
+  myCloudWatchScalingUpAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: CPU Utilization High for Autoscaling Scaling Policy UP
+      AlarmActions:
+        - !Ref myAutoscalingPolicyUp
+      AlarmName: !Join
+        - "-"
+        - - !Ref AWS::StackName
+          - AutoScalingUpAlarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      DatapointsToAlarm: 2
+      EvaluationPeriods: 5
+      Period: 300
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Threshold: 60
+      TreatMissingData: missing
+      Unit: Percent
+
+  myCloudWatchScalingDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: CPU Utilization Low for Autoscaling Scaling Policy Down
+      AlarmActions:
+        - !Ref myAutoscalingPolicyDown
+      AlarmName: !Join
+        - "-"
+        - - !Ref AWS::StackName
+          - AutoScalingDownAlarm
+      ComparisonOperator: LessThanOrEqualToThreshold
+      DatapointsToAlarm: 2
+      EvaluationPeriods: 5
+      Period: 300
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Threshold: 20
+      TreatMissingData: missing
+      Unit: Percent
+
+  myApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: !Join
+        - "-"
+        - - !Ref AWS::StackName
+          - MyLoadBalancer
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref myALBSecurityGroup
+      Subnets:
+        - !ImportValue sharedSubnetPublicA
+        - !ImportValue sharedSubnetPublicB
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref AWS::StackName
+              - MyLoadBalancer
+              - Web-Infrastructure
+      Type: application
+
+  myListerner:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          Order: 1000
+          TargetGroupArn: !Ref myDefaultTargetGrp
+      LoadBalancerArn: !Ref myApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  myDefaultTargetGrp:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: "true"
+      HealthCheckIntervalSeconds: 5
+      HealthCheckPath: /index.html
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 2
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 5
+      Name: myDefaultTargetGrp
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref AWS::StackName
+              - myDefaultTargetGrp
+      TargetType: instance
+      VpcId: !ImportValue sharedVPC
