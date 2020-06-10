@@ -3,7 +3,7 @@ Description: Create an autoscaling group with launch template
 
 Parameters:
   AmiId:
-    Type: String
+    Type: AWS::EC2::Image::Id
     Description: AMI ID for EC2 instance with launch template
     Default: "ami-09d95fab7fff3776c"
 
@@ -17,6 +17,21 @@ Parameters:
 
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
+
+  MinSizeForAutoScaling:
+    Type: Number
+    MinValue: 0
+    Default: 0
+
+  MaxSizeForAutoScaling:
+    Type: Number
+    MinValue: 0
+    Default: 0
+
+  DesiredCapacityForAutoScaling:
+    Type: Number
+    MinValue: 0
+    Default: 0
 
 Mappings:
   InstanceSize:
@@ -89,9 +104,10 @@ Resources:
         UserData:
           "Fn::Base64": !Sub |
             #!/bin/bash -xe
-            # yum update aws-cfn-bootstrap -y
+            yum update aws-cfn-bootstrap -y
             /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --configsets "WordPress" --resource myLaunchTemplate --region ${AWS::Region}
-            # yum update -y
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --region ${AWS::Region} --resource myAutoScalingGroup
+            yum update -y
       LaunchTemplateName: web-infrastructure-ec2-template
 
   mySecurityGroup:
@@ -138,10 +154,14 @@ Resources:
 
   myAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref DesiredCapacityForAutoScaling
+        Timeout: "PT15M"
     Properties:
-      MaxSize: 1
-      MinSize: 1
-      DesiredCapacity: 1
+      MaxSize: !Ref MaxSizeForAutoScaling
+      MinSize: !Ref MinSizeForAutoScaling
+      DesiredCapacity: !Ref DesiredCapacityForAutoScaling
       AutoScalingGroupName: EC2-autoscalingGroup
       HealthCheckType: ELB
       HealthCheckGracePeriod: 60
@@ -168,7 +188,7 @@ Resources:
     Properties:
       AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref myAutoScalingGroup
-      Cooldown: 180
+      Cooldown: "180"
       PolicyType: SimpleScaling
       ScalingAdjustment: 1
 
@@ -177,7 +197,7 @@ Resources:
     Properties:
       AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref myAutoScalingGroup
-      Cooldown: 180
+      Cooldown: "180"
       PolicyType: SimpleScaling
       ScalingAdjustment: -1
 
@@ -260,10 +280,10 @@ Resources:
   myDefaultTargetGrp:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      HealthCheckEnabled: "true"
+      HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 5
       HealthCheckPath: /index.html
-      HealthCheckPort: 80
+      HealthCheckPort: "80"
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 2
       HealthyThresholdCount: 3
@@ -279,3 +299,4 @@ Resources:
               - myDefaultTargetGrp
       TargetType: instance
       VpcId: !ImportValue sharedVPC
+
