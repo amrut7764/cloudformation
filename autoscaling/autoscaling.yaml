@@ -116,10 +116,6 @@ Resources:
       GroupDescription: Security Group for Web Application HTTP access from all world
       GroupName: Web-SecGroup
       SecurityGroupIngress:
-        - CidrIp: 72.137.105.90/32
-          FromPort: 22
-          IpProtocol: tcp
-          ToPort: 22
         - SourceSecurityGroupId: !Ref myALBSecurityGroup
           FromPort: 80
           ToPort: 80
