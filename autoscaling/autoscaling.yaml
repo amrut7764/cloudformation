@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Create an autoscaling group with launch template
-
+#FIXME Change the parameter group with AWS::CloudFormation::Interface
 Parameters:
   AmiId:
     Type: AWS::EC2::Image::Id
@@ -158,11 +158,14 @@ Resources:
       ResourceSignal:
         Count: !Ref DesiredCapacityForAutoScaling
         Timeout: "PT15M"
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
     Properties:
       MaxSize: !Ref MaxSizeForAutoScaling
       MinSize: !Ref MinSizeForAutoScaling
       DesiredCapacity: !Ref DesiredCapacityForAutoScaling
-      AutoScalingGroupName: EC2-autoscalingGroup
+      #AutoScalingGroupName: EC2-autoscalingGroup   # Issue: UpdatePolicy will fail because of the custom name
       HealthCheckType: ELB
       HealthCheckGracePeriod: 60
       AvailabilityZones:
@@ -291,12 +294,31 @@ Resources:
       Name: myDefaultTargetGrp
       Port: 80
       Protocol: HTTP
-      Tags:
-        - Key: Name
-          Value: !Join
-            - "-"
-            - - !Ref AWS::StackName
-              - myDefaultTargetGrp
       TargetType: instance
       VpcId: !ImportValue sharedVPC
+
+Outputs:
+  ApplicationLoadBalancerDNS:
+    Description: DNS name for the Application load balancer
+    Value: !GetAtt myApplicationLoadBalancer.DNSName
+
+  AutoScalingGroup:
+    Description: Name of the auto scaling group
+    Value: !Ref myAutoScalingGroup
+
+  LauchTemplate:
+    Description: Name of the Launch configuration
+    Value: !Ref myLaunchTemplate
+
+  LoadBalancerSecurityGroup:
+    Description: Security Group for LoadBalancer
+    Value: !Ref myALBSecurityGroup
+
+  BackendEC2SecurityGroup:
+    Description: Security Group for EC2 instances
+    Value: !Ref mySecurityGroup
+
+  DefaultTargetGroup:
+    Description: Default Target Group for LoadBalancer
+    Value: !Ref myDefaultTargetGrp
 

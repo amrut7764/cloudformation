@@ -17,7 +17,7 @@ Resources:
   myPublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: "us-east-1a"
+      AvailabilityZone: "us-east-1a" # FIXME Change the AZ value with GetAZs
       CidrBlock: "10.10.10.0/24"
       MapPublicIpOnLaunch: false
       Tags:
@@ -29,7 +29,7 @@ Resources:
   myPrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      AvailabilityZone: "us-east-1a"
+      AvailabilityZone: "us-east-1a" # FIXME Change the AZ value with GetAZs
       CidrBlock: "10.10.20.0/24"
       MapPublicIpOnLaunch: false
       Tags:
