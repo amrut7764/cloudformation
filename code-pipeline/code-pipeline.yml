@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Code Pipeline setup to deploy code from source repository.
+
+Parameters:
+  GitHubRepo:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Name of the GitHub Repository
+    Default: /CFN/CodePipeline/repo
+
+  GitHubOwner:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: GitHub User Name
+    Default: /CFN/CodePipeline/gitusername
+
+  GitHubRepoBranch:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Name of the branch
+    Default: /CFN/CodePipeline/branch
+
+  OAuthTokenGitHub:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: GitHub Authentication Token
+    Default: /CFN/CodePipeline/OAuthToken
+
+  CodeBuildComputeEnvSize:
+    Type: String
+    Description: Select compute size for code build container
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+    Default: BUILD_GENERAL1_SMALL
+
+Resources:
+  myCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: myCodeBuildServiceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies: # FIXME Change permission to least priviledged
+        - PolicyName: codebuild-access-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  myIamRoleForCodePipeline:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: myCodePipelineServiceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies: # FIXME Change permission to least priviledged
+        - PolicyName: CodePipeline-cfn-access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  myCodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: myCodeDeployServiceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies: # FIXME Least priviledged policy
+        - PolicyName: myCodeDeployServiceRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  myCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Location: !Sub ${mySourceArtifactS3Bucket}/codebuild-cache
+        Type: S3
+      Description: Code Build project to prepare build artifacts
+      Environment:
+        ComputeType: !Ref CodeBuildComputeEnvSize
+        # Environmet_Variable:
+        #   -
+        #       Name: <ENV NAME>
+        #       Value: <ENV Value>
+        Image: aws/codebuild/python:3.6.5
+        Type: LINUX_CONTAINER
+      Source:
+        Type: CODEPIPELINE
+      ServiceRole: !GetAtt myCodeBuildServiceRole.Arn
+
+  myCodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: myCodeDeployApplication
+      ComputePlatform: Server
+
+  #myCodeDeployConfiguration:
+  #  Type: AWS::CodeDeploy::DeploymentConfig
+  #  Properties:
+  #    DeploymentConfigName: CodeDeployDefault.AllAtOnce
+
+  myCodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref myCodeDeployApplication
+      DeploymentGroupName: myCodeDeploymentGroup
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      ServiceRoleArn: !GetAtt myCodeDeployServiceRole.Arn
+      AutoScalingGroups:
+        - !ImportValue sharedAutoscalingGroup
+      LoadBalancerInfo:
+        TargetGroupInfoList:
+          - Name: !ImportValue sharedTargetGroup
+      DeploymentStyle:
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+        DeploymentType: IN_PLACE
+
+  myCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: mySecretePipeline
+      ArtifactStore:
+        Location: !Ref mySourceArtifactS3Bucket
+        Type: S3
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt myIamRoleForCodePipeline.Arn
+      Stages:
+        - Name: SourceStage
+          Actions:
+            - Name: mySourceStage
+              ActionTypeId: # https://docs.aws.amazon.com/codepipeline/latest/userguide/reference-pipeline-structure.html#action-requirements
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: "1"
+              Configuration: # https://docs.aws.amazon.com/codepipeline/latest/userguide/action-reference-GitHub.html#action-reference-GitHub-config
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubRepoBranch
+                OAuthToken: !Ref OAuthTokenGitHub # TODO Parameter declaration
+              OutputArtifacts:
+                - Name: myOutputArtifactSource
+              RunOrder: 1
+
+        - Name: BuildStage
+          Actions:
+            - Name: myBuildStage
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              InputArtifacts:
+                - Name: myOutputArtifactSource
+              OutputArtifacts:
+                - Name: myOutputArtifactBuild
+              Configuration:
+                ProjectName: !Ref myCodeBuildProject
+              RunOrder: 1
+
+        - Name: CodeDeployStage
+          Actions:
+            - Name: myCodeDeployStage
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeploy
+                Version: "1"
+              Configuration:
+                ApplicationName: !Ref myCodeDeployApplication
+                DeploymentGroupName: !Ref myCodeDeployDeploymentGroup
+              InputArtifacts:
+                - Name: myOutputArtifactBuild
+
+  myIamInstanceProfileForCodePipeline:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref myIamRoleForCodePipeline
+
+  mySourceArtifactS3Bucket:
+    Type: AWS::S3::Bucket
+
+Outputs:
+  SourceArtifactBucket:
+    Description: S3 Bucket for the sorce artifact
+    Value: !Ref mySourceArtifactS3Bucket

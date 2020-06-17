@@ -87,12 +87,25 @@ Resources:
           packages:
             yum:
               httpd: []
+              ruby: []
           files:
-            /var/www/html/index.html:
-              content: Hello World!
+            /var/www/html/healthcheck.html:
+              content: "Hello Wolrd!"
+            /home/ec2/install:
+              source: !Sub https://aws-codedeploy-${AWS::Region}.s3.amazonaws.com/latest/install
+              mode: "000755"
+              owner: root
+              group: root
+          commands:
+            01_install-codedeploy-agent:
+              cwd: "/home/ec2/"
+              command: ./install auto
           services:
             sysvinit:
               httpd:
+                enabled: "true"
+                ensureRunning: "true"
+              codedeploy-agent:
                 enabled: "true"
                 ensureRunning: "true"
     Properties:
@@ -101,6 +114,8 @@ Resources:
         InstanceType: !FindInMap [InstanceSize, !Ref EnvironmentSize, EC2]
         KeyName: !Ref KeyName
         SecurityGroupIds: [!Ref mySecurityGroup]
+        IamInstanceProfile:
+          Arn: !GetAtt myIamInstanceProfileForEC2CodeDeploy.Arn
         UserData:
           "Fn::Base64": !Sub |
             #!/bin/bash -xe
@@ -147,6 +162,29 @@ Resources:
             - - !Ref "AWS::StackName"
               - ALBSecurityGroup
               - LBToBackend
+
+  myIAMRoleForEC2CodeDeploy:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "sts:AssumeRole"
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+
+  myIamInstanceProfileForEC2CodeDeploy:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref myIAMRoleForEC2CodeDeploy
 
   myAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -281,7 +319,7 @@ Resources:
     Properties:
       HealthCheckEnabled: true
       HealthCheckIntervalSeconds: 5
-      HealthCheckPath: /index.html
+      HealthCheckPath: /healthcheck.html
       HealthCheckPort: "80"
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 2
@@ -297,10 +335,14 @@ Outputs:
   ApplicationLoadBalancerDNS:
     Description: DNS name for the Application load balancer
     Value: !GetAtt myApplicationLoadBalancer.DNSName
+    Export:
+      Name: sharedLoadBalancer
 
   AutoScalingGroup:
     Description: Name of the auto scaling group
     Value: !Ref myAutoScalingGroup
+    Export:
+      Name: sharedAutoscalingGroup
 
   LauchTemplate:
     Description: Name of the Launch configuration
@@ -318,3 +360,8 @@ Outputs:
     Description: Default Target Group for LoadBalancer
     Value: !Ref myDefaultTargetGrp
 
+  DefaultTargetGroupName:
+    Description: Name of the Target group
+    Value: !GetAtt myDefaultTargetGrp.TargetGroupName
+    Export:
+      Name: sharedTargetGroup
